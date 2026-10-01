@@ -18,7 +18,7 @@
     {% endwith %}
     <form method="POST" class="standard-form">
         <div class="form-group"><label for="correo">Correo registrado</label><input id="correo" name="correo" type="email" autocomplete="username" required></div>
-        <div class="form-group"><label for="contraseña">Contraseña</label><input id="contraseña" name="contraseña" type="password" autocomplete="current-password" required></div>
+        <div class="form-group"><label for="contraseña">Contraseña</label><input id="contraseña" name="contraseña" type="password" autocomplete="current-password" minlength="8" maxlength="20" required></div>
         <button class="btn-primary btn-full-width" type="submit">Entrar al portal</button>
     </form>
     <p class="switch-link">¿Nuevo proveedor? <a href="{{ url_for('provider_register') }}">Solicita una cuenta</a><br><a href="{{ url_for('index') }}">Volver a la tienda</a></p>

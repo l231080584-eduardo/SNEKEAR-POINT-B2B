@@ -105,6 +105,16 @@ def password_matches(stored_hash, password):
     return hmac.compare_digest(stored_hash, legacy_hash), True
 
 
+def is_valid_password(password):
+    return (
+        8 <= len(password) <= 20
+        and any(character.isupper() for character in password)
+        and any(character.islower() for character in password)
+        and any(character.isdigit() for character in password)
+        and any(not character.isalnum() and not character.isspace() for character in password)
+    )
+
+
 def safe_next(default_endpoint):
     next_path = request.form.get("next") or request.args.get("next")
     parsed = urlsplit(next_path or "")
@@ -222,6 +232,9 @@ def registro():
             print("ERROR: FALTA ALGÚN CAMPO")
             flash("Completa todos los campos.", "error")
             return render_template("registro.html")
+        if not is_valid_password(password):
+            flash("La contraseña debe tener entre 8 y 20 caracteres e incluir mayúscula, minúscula, número y símbolo.", "error")
+            return render_template("registro.html")
 
         try:
             print("Intentando generar hash...")
@@ -316,6 +329,9 @@ def provider_register():
         password = request.form.get("contraseña", "")
         if not all([name, contact, email, phone, password]):
             flash("Completa los datos requeridos.", "error")
+            return render_template("provider_register.html")
+        if not is_valid_password(password):
+            flash("La contraseña debe tener entre 8 y 20 caracteres e incluir mayúscula, minúscula, número y símbolo.", "error")
             return render_template("provider_register.html")
         try:
             _db_query(
@@ -683,8 +699,8 @@ def admin_proveedores():
             request.form.get("correo", "").strip().lower(), request.form.get("telefono", "").strip(),
             request.form.get("localidad", "").strip(),
         )
-        if not values[0] or not values[2] or len(password) < 8:
-            flash("Nombre, correo y una contraseña de al menos 8 caracteres son obligatorios.", "error")
+        if not values[0] or not values[2] or not is_valid_password(password):
+            flash("Nombre y correo son obligatorios. La contraseña debe tener entre 8 y 20 caracteres e incluir mayúscula, minúscula, número y símbolo.", "error")
         else:
             try:
                 _db_query(
@@ -712,6 +728,9 @@ def admin_proveedores():
 @admin_required
 def admin_proveedor_editar(provider_id):
     password = request.form.get("contraseña", "")
+    if password and not is_valid_password(password):
+        flash("La contraseña debe tener entre 8 y 20 caracteres e incluir mayúscula, minúscula, número y símbolo.", "error")
+        return redirect(url_for("admin_proveedores"))
     values = (
         request.form.get("razon_social", "").strip(), request.form.get("contacto", "").strip(),
         request.form.get("correo", "").strip().lower(), request.form.get("telefono", "").strip(),
