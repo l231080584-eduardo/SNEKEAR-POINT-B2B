@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SNEAKER POINT | Iniciar sesión</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='b2b.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='storefront.css') }}">
 </head>
 <body class="auth-body">
     <div class="auth-container">
@@ -39,7 +39,7 @@
         
         <p class="switch-link">
             ¿No tienes cuenta? <a href="{{ url_for('registro') }}">Regístrate</a><br>
-            <a href="{{ url_for('admin_login') }}">Acceso administración</a> · <a href="{{ url_for('provider_login') }}">Acceso proveedor</a>
+            <a href="{{ url_for('provider_login') }}">Acceso proveedor</a>
         </p>
     </div>
 </body>

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SNEAKER POINT | {% block title %}{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='b2b.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='storefront.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
@@ -22,19 +22,15 @@
                 <a href="{{ url_for('provider_dashboard') }}">Mis productos</a>
                 <a href="{{ url_for('index') }}">Ver tienda</a>
             {% else %}
-                <a class="provider-entry" href="{{ url_for('provider_landing') }}">Proveedores</a>
-                <a class="admin-entry" href="{{ url_for('admin_login') }}">Administración</a>
+                <a href="{{ url_for('index') }}">Inicio</a>
+                <a href="{{ url_for('index') }}#productos">Productos</a>
+                <a href="{{ url_for('provider_landing') }}">Proveedores</a>
+                <a href="{{ url_for('index') }}#como-funciona">¿Cómo funciona?</a>
                 {% if session.get('role') == 'customer' %}
                     <a href="{{ url_for('mis_pedidos') }}">Mis compras</a>
                 {% endif %}
             {% endif %}
         </nav>
-        {% if not session.get('role') or session.get('role') == 'customer' %}
-        <form action="{{ url_for('search_products') }}" method="GET" class="search-container search-form-inline">
-            <input type="search" name="q" placeholder="Buscar tenis" aria-label="Buscar tenis" value="{{ search_query|default('') }}">
-            <button type="submit" aria-label="Buscar"><i class="fas fa-search"></i></button>
-        </form>
-        {% endif %}
         <div class="user-actions">
             {% if session.get('role') == 'customer' %}
                 <a href="{{ url_for('carrito') }}" title="Carrito"><i class="fas fa-shopping-bag"></i><span class="cart-count">{{ session.get('cart', {}).values()|sum }}</span></a>
@@ -42,7 +38,8 @@
             {% elif session.get('role') in ['admin', 'provider'] %}
                 <a href="{{ url_for('logout') }}" title="Cerrar sesión"><i class="fas fa-sign-out-alt"></i></a>
             {% else %}
-                <a href="{{ url_for('login') }}" title="Iniciar sesión"><i class="fas fa-user"></i></a>
+                <a href="{{ url_for('login') }}">Iniciar sesión</a>
+                <a class="btn-primary" href="{{ url_for('registro') }}">Regístrate</a>
             {% endif %}
         </div>
     </div>
@@ -65,10 +62,27 @@
         </div>
         <div class="footer-right">
             <a href="{{ url_for('provider_landing') }}">Vende con nosotros</a>
-            <a href="{{ url_for('admin_login') }}">Administración</a>
             <span>Atención local</span>
         </div>
     </div>
 </footer>
+<a class="admin-secret-access" data-admin-access href="{{ url_for('admin_login') }}" hidden>Acceso administrativo</a>
+<script>
+    (() => {
+        const secret = 'sneakeradmin';
+        const accessLink = document.querySelector('[data-admin-access]');
+        let typed = '';
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key.length !== 1 || event.ctrlKey || event.altKey || event.metaKey) return;
+            if (event.target.matches('input, textarea, select, [contenteditable="true"]')) return;
+            typed = (typed + event.key.toLowerCase()).slice(-secret.length);
+            if (typed === secret) {
+                accessLink.hidden = false;
+                accessLink.focus();
+            }
+        });
+    })();
+</script>
 </body>
 </html>
