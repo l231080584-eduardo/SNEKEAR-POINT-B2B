@@ -203,25 +203,58 @@ def login():
 @app.route("/registro", methods=["GET", "POST"])
 def registro():
     if request.method == "POST":
+        print("========== POST /registro ==========")
+        print("DATOS RECIBIDOS:", request.form.to_dict())
+
         nombre = request.form.get("nombre", "").strip()
         apellido = request.form.get("apellido", "").strip()
         correo = request.form.get("correo", "").strip().lower()
         telefono = request.form.get("telefono", "").strip()
         password = request.form.get("contraseña", "")
+
+        print("nombre:", nombre)
+        print("apellido:", apellido)
+        print("correo:", correo)
+        print("telefono:", telefono)
+        print("contraseña recibida:", bool(password))
+
         if not all([nombre, apellido, correo, telefono, password]):
+            print("ERROR: FALTA ALGÚN CAMPO")
             flash("Completa todos los campos.", "error")
             return render_template("registro.html")
+
         try:
+            print("Intentando generar hash...")
+            password_hash = generate_password_hash(password)
+            print("Hash generado correctamente.")
+
+            print("Intentando INSERT en clientes...")
+
             _db_query(
-                "INSERT INTO clientes (nombre, apellido, correo, contraseña, telefono) VALUES (%s, %s, %s, %s, %s)",
-                (nombre, apellido, correo, generate_password_hash(password), telefono), commit=True,
+                """
+                INSERT INTO clientes
+                (nombre, apellido, correo, contraseña, telefono)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (nombre, apellido, correo, password_hash, telefono),
+                commit=True,
             )
+
+            print("USUARIO INSERTADO CORRECTAMENTE")
+
             flash("Cuenta creada. Inicia sesión para comprar.", "success")
             return redirect(url_for("login"))
+
         except psycopg2.IntegrityError:
+            print("ERROR: CORREO DUPLICADO O RESTRICCIÓN DE BASE DE DATOS")
+            logging.exception("ERROR DE INTEGRIDAD AL REGISTRAR USUARIO")
             flash("Ese correo ya tiene una cuenta.", "error")
-        except Exception:
-            flash("No se pudo crear la cuenta. Intenta de nuevo más tarde.", "error")
+
+        except Exception as e:
+            print("ERROR GENERAL AL REGISTRAR:", repr(e))
+            logging.exception("ERROR AL REGISTRAR USUARIO")
+            flash(f"Error: {e}", "error")
+
     return render_template("registro.html")
 
 
