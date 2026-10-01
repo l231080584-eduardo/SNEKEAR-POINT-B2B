@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard administrador{% endblock %}
+
+{% block content %}
+<div class="dashboard-heading"><div><p class="section-kicker">Administración · Sneaker Point</p><h1>Panel general</h1><p>Catálogo, aliados y operación de ventas.</p></div><div class="dashboard-actions"><a href="{{ url_for('admin_productos') }}" class="btn-primary"><i class="fas fa-plus"></i> Gestionar catálogo</a><a href="{{ url_for('admin_ventas') }}" class="btn-secondary">Historial de ventas</a></div></div>
+
+<section class="metric-grid">
+    <article class="metric-card"><span>Modelos publicados</span><strong class="metric-value">{{ summary.products }}</strong><a href="{{ url_for('admin_productos') }}">Abrir catálogo <i class="fas fa-arrow-right"></i></a></article>
+    <article class="metric-card"><span>Proveedores</span><strong class="metric-value">{{ summary.providers }}</strong><a href="{{ url_for('admin_proveedores') }}">Administrar aliados <i class="fas fa-arrow-right"></i></a></article>
+    <article class="metric-card"><span>Productos por revisar</span><strong class="metric-value">{{ summary.pending }}</strong><a href="#propuestas">Revisar propuestas <i class="fas fa-arrow-right"></i></a></article>
+    <article class="metric-card"><span>Ventas registradas</span><strong class="metric-value">${{ "{:,.2f}".format(summary.sales) }}</strong><a href="{{ url_for('admin_ventas') }}">Ver historial <i class="fas fa-arrow-right"></i></a></article>
+</section>
+
+<section class="admin-section" id="propuestas">
+    <div class="section-heading"><div><p class="section-kicker">Revisión editorial y de stock</p><h2>Productos enviados por proveedores</h2><p>Solo lo que publiques aquí será visible para compradores.</p></div></div>
+    {% if proposals %}
+    <div class="orders-table-wrap"><table class="orders-table"><thead><tr><th>Producto</th><th>Proveedor</th><th>Precio / stock</th><th>Enviado</th><th>Acciones</th></tr></thead><tbody>
+    {% for product in proposals %}
+    <tr><td><strong>{{ product.nombre }}</strong><br><small>{{ product.marca }} · {{ product.color }} · Talla {{ product.talla }}</small></td><td>{{ product.razon_social }}</td><td>${{ "{:,.2f}".format(product.precio) }} · {{ product.stock }} pares</td><td>{{ product.fecha_creacion.strftime('%d/%m/%Y') }}</td><td><div class="table-actions"><form method="POST" action="{{ url_for('admin_publicar_propuesta', proposal_id=product.id_producto_proveedor) }}"><button class="btn-primary compact-button" type="submit"><i class="fas fa-check"></i> Publicar</button></form><form method="POST" action="{{ url_for('admin_rechazar_propuesta', proposal_id=product.id_producto_proveedor) }}"><button class="btn-secondary compact-button" type="submit">Rechazar</button></form></div></td></tr>
+    {% endfor %}
+    </tbody></table></div>
+    {% else %}<div class="empty-state">No hay productos esperando revisión.</div>{% endif %}
+</section>
+
+<section class="admin-section">
+    <div class="section-heading"><div><p class="section-kicker">Relación comercial interna</p><h2>Proveedores y su inventario</h2></div><a href="{{ url_for('admin_proveedores') }}">Administrar directorio</a></div>
+    {% if providers %}<div class="admin-provider-grid">
+    {% for provider in providers %}
+    <article class="admin-provider-card"><div class="provider-admin-meta"><h3>{{ provider.razon_social }}</h3><span class="status-pill">{% if provider.activo %}Activo{% else %}Pendiente / pausado{% endif %}</span></div><p>{{ provider.contacto or 'Sin contacto asignado' }}</p><p><a href="mailto:{{ provider.correo }}">{{ provider.correo }}</a> · {{ provider.telefono }}</p><p>{{ provider.localidad }}</p><div class="provider-models"><strong>Modelos enviados</strong><span>{{ provider.modelos or 'Aún no registra productos' }}</span></div></article>
+    {% endfor %}</div>{% else %}<div class="empty-state">El directorio de proveedores aparecerá aquí.</div>{% endif %}
+</section>
+
+<section class="admin-section">
+    <div class="section-heading"><div><p class="section-kicker">Actividad reciente</p><h2>Últimos pedidos</h2></div><a href="{{ url_for('admin_ventas') }}">Ver todos</a></div>
+    {% if recent_orders %}<div class="orders-table-wrap"><table class="orders-table"><thead><tr><th>Pedido</th><th>Cliente</th><th>Fecha</th><th>Estado</th><th>Total</th></tr></thead><tbody>{% for order in recent_orders %}<tr><td>#{{ order.id_pedido }}</td><td>{{ order.nombre }} {{ order.apellido }}</td><td>{{ order.fecha_creacion.strftime('%d/%m/%Y') }}</td><td><span class="status-pill">{{ order.estado }}</span></td><td>${{ "{:,.2f}".format(order.total) }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state">Todavía no hay pedidos.</div>{% endif %}
+</section>
+{% endblock %}

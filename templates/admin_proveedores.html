@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block title %}Proveedores | Administración{% endblock %}
+
+{% block content %}
+<div class="dashboard-heading"><div><p class="section-kicker">Información interna</p><h1>Proveedores</h1><p>Administra contactos, accesos y propuestas de producto.</p></div><a href="{{ url_for('admin_dashboard') }}" class="btn-secondary">Dashboard</a></div>
+<div class="provider-layout admin-provider-layout">
+    <form action="{{ url_for('admin_proveedores') }}" method="POST" class="standard-form"><h2>Agregar proveedor</h2>
+        <div class="form-group"><label for="razon_social">Negocio / razón social</label><input id="razon_social" name="razon_social" required></div>
+        <div class="form-group"><label for="contacto">Contacto</label><input id="contacto" name="contacto"></div>
+        <div class="form-group"><label for="correo">Correo</label><input id="correo" name="correo" type="email" required></div>
+        <div class="form-group"><label for="telefono">Teléfono</label><input id="telefono" name="telefono" type="tel"></div>
+        <div class="form-group"><label for="localidad">Localidad</label><input id="localidad" name="localidad"></div>
+        <div class="form-group"><label for="contraseña">Contraseña inicial</label><input id="contraseña" name="contraseña" type="password" minlength="8" autocomplete="new-password" required></div>
+        <button type="submit" class="btn-primary btn-full-width">Agregar al directorio</button>
+    </form>
+    <section><div class="section-heading"><div><p class="section-kicker">Directorio privado</p><h2>Contactos registrados</h2></div></div>
+        {% if proveedores %}<div class="provider-list">
+        {% for provider in proveedores %}
+        <article class="provider-row provider-admin-row">
+            <div class="provider-admin-meta"><h3>{{ provider.razon_social }}</h3><span class="status-pill">{% if provider.activo %}Activo{% else %}Pendiente / pausado{% endif %}</span><p>{{ provider.total_productos }} propuestas · {{ provider.localidad or 'Localidad no indicada' }}</p></div>
+            <form method="POST" action="{{ url_for('admin_proveedor_editar', provider_id=provider.id_proveedor) }}" class="provider-edit-form">
+                <div class="form-row"><div class="form-group"><label>Negocio</label><input name="razon_social" value="{{ provider.razon_social }}" required></div><div class="form-group"><label>Contacto</label><input name="contacto" value="{{ provider.contacto }}"></div></div>
+                <div class="form-row"><div class="form-group"><label>Correo</label><input name="correo" type="email" value="{{ provider.correo }}" required></div><div class="form-group"><label>Teléfono</label><input name="telefono" value="{{ provider.telefono }}"></div><div class="form-group"><label>Localidad</label><input name="localidad" value="{{ provider.localidad }}"></div></div>
+                <div class="form-group"><label>Restablecer contraseña (opcional)</label><input name="contraseña" type="password" minlength="8" autocomplete="new-password"></div>
+                <div class="row-actions"><button class="btn-secondary compact-button" type="submit"><i class="fas fa-save"></i> Guardar</button></div>
+            </form>
+            <form method="POST" action="{{ url_for('admin_proveedor_estado', provider_id=provider.id_proveedor) }}"><input type="hidden" name="activo" value="{{ 'false' if provider.activo else 'true' }}"><button class="btn-primary compact-button" type="submit">{% if provider.activo %}Pausar acceso{% else %}Habilitar{% endif %}</button></form>
+            <form method="POST" action="{{ url_for('admin_proveedor_eliminar', provider_id=provider.id_proveedor) }}" onsubmit="return confirm('¿Eliminar este proveedor y sus propuestas? Los tenis ya publicados seguirán en la tienda.')"><button class="icon-button danger" type="submit" title="Eliminar proveedor"><i class="fas fa-trash-alt"></i></button></form>
+        </article>
+        {% endfor %}</div>{% else %}<div class="empty-state">No hay proveedores registrados.</div>{% endif %}
+    </section>
+</div>
+{% endblock %}

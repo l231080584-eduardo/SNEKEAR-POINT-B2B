@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administración | Sneaker Point</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='b2b.css') }}">
+</head>
+<body class="auth-body">
+    <main class="auth-container">
+        <span class="auth-role">Acceso privado</span>
+        <h1>SNEAKER POINT</h1>
+        <h2>Administración</h2>
+        <p class="auth-brandline">Gestión del catálogo, proveedores y ventas.</p>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, message in messages %}
+        <div class="flash-message flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+        {% endwith %}
+        <form action="{{ url_for('admin_login') }}" method="POST" class="standard-form">
+            <div class="form-group">
+                <label for="correo">Correo administrativo</label>
+                <input type="email" id="correo" name="correo" autocomplete="username" required>
+            </div>
+            <div class="form-group">
+                <label for="contraseña">Contraseña</label>
+                <input type="password" id="contraseña" name="contraseña" autocomplete="current-password" required>
+            </div>
+            <button type="submit" class="btn-primary btn-full-width">Entrar al panel</button>
+        </form>
+        <p class="switch-link"><a href="{{ url_for('index') }}">Volver a la tienda</a></p>
+    </main>
+</body>
+</html>
