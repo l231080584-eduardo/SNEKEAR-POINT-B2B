@@ -1,9 +1,11 @@
+
 from functools import wraps
 import hashlib
 import hmac
 import logging
 import math
 import os
+import re
 from urllib.parse import urlsplit
 
 import psycopg2
@@ -25,7 +27,35 @@ DB_USER = os.getenv("DB_USER")
 DB_PASS = os.getenv("DB_PASS")
 
 
+DB_ENGINE = os.getenv("DB_ENGINE", "postgres").strip().lower()
+DB_DRIVER = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
+if DB_ENGINE not in {"postgres", "sqlserver"}:
+    raise ValueError("DB_ENGINE debe ser 'postgres' o 'sqlserver'.")
+
+
 def get_conn():
+    if DB_ENGINE == "sqlserver":
+        try:
+            import pyodbc
+        except ImportError as error:
+            raise RuntimeError("DB_ENGINE=sqlserver requiere instalar pyodbc desde requirements.txt.") from error
+
+        server = DB_HOST or "localhost"
+        if DB_PORT:
+            server = f"{server},{DB_PORT}"
+
+        def odbc_value(value):
+            return "{" + str(value or "").replace("}", "}}") + "}"
+
+        connection_string = (
+            f"DRIVER={odbc_value(DB_DRIVER)};"
+            f"SERVER={odbc_value(server)};"
+            f"DATABASE={odbc_value(DB_NAME)};"
+            f"UID={odbc_value(DB_USER)};"
+            f"PWD={odbc_value(DB_PASS)};"
+            f"TrustServerCertificate={os.getenv('DB_TRUST_SERVER_CERTIFICATE', 'yes')};"
+        )
+        return pyodbc.connect(connection_string)
     database_url = os.getenv("DATABASE_URL")
     if database_url:
         return psycopg2.connect(database_url, sslmode=os.getenv("DB_SSLMODE", "require"))
@@ -38,21 +68,112 @@ def get_conn():
     )
 
 
+def _sqlserver_sql(sql):
+    sql = re.sub(r"\b([A-Za-z_][\w.]*)\s+ILIKE\s+(%s)", r"LOWER(\1) LIKE LOWER(\2)", sql, flags=re.IGNORECASE)
+    sql = re.sub(
+        r"STRING_AGG\s*\(\s*(?:DISTINCT\s+)?([^,]+),\s*('[^']*')\s+ORDER BY\s+([^)]+)\)",
+        r"STRING_AGG(\1, \2) WITHIN GROUP (ORDER BY \3)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    returning = re.search(
+        r"\bINSERT\s+INTO\s+([\w.]+)\s*(\([^)]*\))\s*VALUES\s*(\([^)]*\))\s*RETURNING\s+(\w+)",
+        sql,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if returning:
+        sql = (
+            f"INSERT INTO {returning.group(1)} {returning.group(2)} "
+            f"OUTPUT INSERTED.{returning.group(4)} VALUES {returning.group(3)}"
+        )
+
+    if re.search(r"\bFOR\s+UPDATE\b", sql, flags=re.IGNORECASE):
+        for table in ("productos", "productos_proveedor", "pedidos"):
+            sql = re.sub(
+                rf"\b(FROM|JOIN)\s+{table}\b(?!\s+WITH\b)(?=\s+(?:WHERE|FOR\s+UPDATE))",
+                rf"\1 {table} WITH (UPDLOCK, ROWLOCK)",
+                sql,
+                flags=re.IGNORECASE,
+            )
+    sql = re.sub(r"\s+FOR\s+UPDATE\b", "", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bTRUE\b", "1", sql, flags=re.IGNORECASE)
+    sql = re.sub(r"\bFALSE\b", "0", sql, flags=re.IGNORECASE)
+
+    limit = re.search(r"\bLIMIT\s+(\d+)\s*$", sql, flags=re.IGNORECASE)
+    if limit:
+        if not re.search(r"\bORDER\s+BY\b", sql, flags=re.IGNORECASE):
+            raise ValueError("Las consultas SQL Server con LIMIT requieren ORDER BY.")
+        sql = sql[:limit.start()].rstrip() + f" OFFSET 0 ROWS FETCH NEXT {limit.group(1)} ROWS ONLY"
+
+    if re.search(r"UPDATE\s+productos\s+\w+\s+SET\s+stock\s*=", sql, flags=re.IGNORECASE):
+        sql = re.sub(r"UPDATE\s+productos\s+\w+\s+SET\s+", "UPDATE p SET ", sql, count=1, flags=re.IGNORECASE)
+        sql = re.sub(r"\bFROM\s*\(", "FROM productos AS p JOIN (", sql, count=1, flags=re.IGNORECASE)
+        sql = re.sub(r"\)\s+lines\s+WHERE\s+p\.id_producto\s*=\s*lines\.id_producto", ") AS lines ON p.id_producto = lines.id_producto", sql, flags=re.IGNORECASE)
+    return sql
+
+
+def _execute(cur, sql, params=None):
+    if DB_ENGINE == "sqlserver":
+        sql = _sqlserver_sql(sql).replace("%s", "?")
+    return cur.execute(sql, params or ())
+
+
+def _row_as_dict(cur, row):
+    if row is None or hasattr(row, "keys"):
+        return row
+    return dict(zip((column[0] for column in cur.description), row))
+
+
+def _fetchone(cur):
+    return _row_as_dict(cur, cur.fetchone())
+
+
+def _fetchall(cur):
+    return [_row_as_dict(cur, row) for row in cur.fetchall()]
+
+
+def _cursor(conn):
+    if DB_ENGINE == "postgres":
+        return conn.cursor(cursor_factory=RealDictCursor)
+    return conn.cursor()
+
+
+def _database_error_types():
+    if DB_ENGINE == "sqlserver":
+        try:
+            import pyodbc
+        except ImportError:
+            return ()
+        return (pyodbc.Error,)
+    return (psycopg2.Error,)
+
+
+def _is_integrity_error(error):
+    if DB_ENGINE == "sqlserver":
+        try:
+            import pyodbc
+        except ImportError:
+            return False
+        return isinstance(error, pyodbc.IntegrityError)
+    return isinstance(error, psycopg2.IntegrityError)
+
+
 def _db_query(sql, params=None, fetch_one=False, fetch_all=False, commit=False):
     conn = None
     cur = None
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute(sql, params or ())
+        cur = _cursor(conn)
+        _execute(cur, sql, params)
         if commit:
             conn.commit()
         elif fetch_one:
-            return cur.fetchone()
+            return _fetchone(cur)
         elif fetch_all:
-            return cur.fetchall()
+            return _fetchall(cur)
         return None
-    except psycopg2.Error:
+    except _database_error_types():
         if conn:
             conn.rollback()
         logging.exception("Database operation failed")
@@ -258,12 +379,12 @@ def registro():
             flash("Cuenta creada. Inicia sesión para comprar.", "success")
             return redirect(url_for("login"))
 
-        except psycopg2.IntegrityError:
-            print("ERROR: CORREO DUPLICADO O RESTRICCIÓN DE BASE DE DATOS")
-            logging.exception("ERROR DE INTEGRIDAD AL REGISTRAR USUARIO")
-            flash("Ese correo ya tiene una cuenta.", "error")
-
         except Exception as e:
+            if _is_integrity_error(e):
+                print("ERROR: CORREO DUPLICADO O RESTRICCIÓN DE BASE DE DATOS")
+                logging.exception("ERROR DE INTEGRIDAD AL REGISTRAR USUARIO")
+                flash("Ese correo ya tiene una cuenta.", "error")
+                return render_template("registro.html")
             print("ERROR GENERAL AL REGISTRAR:", repr(e))
             logging.exception("ERROR AL REGISTRAR USUARIO")
             flash(f"Error: {e}", "error")
@@ -341,10 +462,12 @@ def provider_register():
             )
             flash("Solicitud recibida. Administración revisará y habilitará tu cuenta.", "success")
             return redirect(url_for("provider_login"))
-        except psycopg2.IntegrityError:
-            flash("Ese correo ya está registrado como proveedor.", "error")
-        except Exception:
-            flash("No se pudo enviar tu solicitud.", "error")
+        except Exception as error:
+            if _is_integrity_error(error):
+                flash("Ese correo ya está registrado como proveedor.", "error")
+            else:
+                logging.exception("Could not submit provider registration")
+                flash("No se pudo enviar tu solicitud.", "error")
     return render_template("provider_register.html")
 
 
@@ -450,7 +573,7 @@ def comprar():
     cur = None
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur = _cursor(conn)
         total = 0
         locked_items = []
         for key, quantity in session.get("cart", {}).items():
@@ -458,14 +581,14 @@ def comprar():
             quantity = int(quantity)
             if quantity < 1:
                 raise ValueError("Cantidad inválida.")
-            cur.execute("SELECT id_producto, nombre, precio, stock FROM productos WHERE id_producto = %s AND activo = TRUE FOR UPDATE", (int(product_id_text),))
-            product = cur.fetchone()
+            _execute(cur, "SELECT id_producto, nombre, precio, stock FROM productos WHERE id_producto = %s AND activo = TRUE FOR UPDATE", (int(product_id_text),))
+            product = _fetchone(cur)
             if not product or product["stock"] < quantity:
                 raise ValueError(f"No hay stock suficiente para {product['nombre'] if product else 'uno de los modelos'}.")
             total += product["precio"] * quantity
             locked_items.append((product, quantity, size))
 
-        cur.execute(
+        _execute(cur,
                 """INSERT INTO pedidos
                     (id_clientes, nombre, apellido, correo, telefono, calle, numero_exterior,
                      numero_interior, codigo_postal, metodo_pago, total, estado)
@@ -475,17 +598,17 @@ def comprar():
                  fields["telefono"], fields["calle"], fields["numero_exterior"],
                  fields["numero_interior"], fields["codigo_postal"], fields["metodo_pago"], total),
         )
-        order_id = cur.fetchone()["id_pedido"]
+        order_id = _fetchone(cur)["id_pedido"]
         for product, quantity, size in locked_items:
             line_total = product["precio"] * quantity
-            cur.execute(
+            _execute(cur,
                 """INSERT INTO ventas (id_producto, id_clientes, id_pedido, cantidad, total, talla, metodo_pago)
                    VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (product["id_producto"], session["id_cliente"], order_id, quantity, line_total, size, fields["metodo_pago"]),
             )
-            cur.execute("UPDATE productos SET stock = stock - %s WHERE id_producto = %s", (quantity, product["id_producto"]))
+            _execute(cur, "UPDATE productos SET stock = stock - %s WHERE id_producto = %s", (quantity, product["id_producto"]))
         conn.commit()
-    except (ValueError, psycopg2.Error) as error:
+    except (ValueError,) + _database_error_types() as error:
         if conn:
             conn.rollback()
         logging.exception("Order checkout failed")
@@ -535,6 +658,7 @@ def admin_dashboard():
         summary = {
             "products": _db_query("SELECT COUNT(*) AS value FROM productos", fetch_one=True)["value"],
             "providers": _db_query("SELECT COUNT(*) AS value FROM proveedores", fetch_one=True)["value"],
+            "active_providers": _db_query("SELECT COUNT(*) AS value FROM proveedores WHERE activo=TRUE", fetch_one=True)["value"],
             "pending": _db_query("SELECT COUNT(*) AS value FROM productos_proveedor WHERE estado = 'pendiente'", fetch_one=True)["value"],
             "sales": _db_query("SELECT COALESCE(SUM(total), 0) AS value FROM pedidos WHERE estado <> 'cancelado'", fetch_one=True)["value"],
         }
@@ -552,16 +676,26 @@ def admin_dashboard():
         providers = _db_query(
             """SELECT pr.id_proveedor, pr.razon_social, pr.contacto, pr.correo,
                       pr.telefono, pr.localidad, pr.activo,
-                      STRING_AGG(DISTINCT pp.nombre, ', ' ORDER BY pp.nombre) AS modelos
+                      STRING_AGG(pp.nombre, ', ' ORDER BY pp.nombre) AS modelos
                FROM proveedores pr
-               LEFT JOIN productos_proveedor pp ON pp.id_proveedor=pr.id_proveedor
-               GROUP BY pr.id_proveedor ORDER BY pr.razon_social LIMIT 8""",
+               LEFT JOIN (SELECT DISTINCT id_proveedor, nombre FROM productos_proveedor) pp
+                   ON pp.id_proveedor=pr.id_proveedor
+               GROUP BY pr.id_proveedor, pr.razon_social, pr.contacto, pr.correo,
+                        pr.telefono, pr.localidad, pr.activo
+               ORDER BY pr.razon_social LIMIT 8""",
             fetch_all=True,
         )
     except Exception:
-        summary = {"products": 0, "providers": 0, "pending": 0, "sales": 0}
+        summary = {"products": 0, "providers": 0, "active_providers": 0, "pending": 0, "sales": 0}
         proposals, recent_orders, providers = [], [], []
     return render_template("admin_dashboard.html", summary=summary, proposals=proposals, recent_orders=recent_orders, providers=providers)
+
+
+@app.route("/admin/vista-prueba", methods=["POST"])
+@admin_required
+def toggle_role_preview():
+    session["preview_user"] = not session.get("preview_user", False)
+    return redirect(url_for("admin_dashboard"))
 
 
 @app.route("/admin/productos")
@@ -644,25 +778,25 @@ def admin_publicar_propuesta(proposal_id):
     cur = None
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT * FROM productos_proveedor WHERE id_producto_proveedor=%s AND estado='pendiente' FOR UPDATE", (proposal_id,))
-        proposal = cur.fetchone()
+        cur = _cursor(conn)
+        _execute(cur, "SELECT * FROM productos_proveedor WHERE id_producto_proveedor=%s AND estado='pendiente' FOR UPDATE", (proposal_id,))
+        proposal = _fetchone(cur)
         if not proposal:
             flash("La propuesta ya no está pendiente.", "warning")
             return redirect(url_for("admin_dashboard"))
-        cur.execute(
+        _execute(cur,
             """UPDATE productos SET nombre=%s, marca=%s, descripcion=%s, precio=%s, stock=%s,
                color=%s, talla=%s, imagen_url=%s, activo=TRUE
                WHERE producto_proveedor_id=%s""",
             (proposal["nombre"], proposal["marca"], proposal["descripcion"], proposal["precio"], proposal["stock"], proposal["color"], proposal["talla"], proposal["imagen_url"], proposal_id),
         )
         if cur.rowcount == 0:
-            cur.execute(
+            _execute(cur,
                 """INSERT INTO productos (nombre, marca, descripcion, precio, stock, color, talla, imagen_url, activo, producto_proveedor_id)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, %s)""",
                 (proposal["nombre"], proposal["marca"], proposal["descripcion"], proposal["precio"], proposal["stock"], proposal["color"], proposal["talla"], proposal["imagen_url"], proposal_id),
             )
-        cur.execute("UPDATE productos_proveedor SET estado='publicado' WHERE id_producto_proveedor=%s", (proposal_id,))
+        _execute(cur, "UPDATE productos_proveedor SET estado='publicado' WHERE id_producto_proveedor=%s", (proposal_id,))
         conn.commit()
         flash("Producto del proveedor agregado al catálogo público.", "success")
     except Exception:
@@ -715,9 +849,10 @@ def admin_proveedores():
         return redirect(url_for("admin_proveedores"))
     try:
         proveedores = _db_query(
-            """SELECT pr.*, COUNT(pp.id_producto_proveedor) AS total_productos
-               FROM proveedores pr LEFT JOIN productos_proveedor pp ON pp.id_proveedor=pr.id_proveedor
-               GROUP BY pr.id_proveedor ORDER BY pr.razon_social""", fetch_all=True,
+            """SELECT pr.*,
+                      (SELECT COUNT(*) FROM productos_proveedor pp
+                       WHERE pp.id_proveedor=pr.id_proveedor) AS total_productos
+               FROM proveedores pr ORDER BY pr.razon_social""", fetch_all=True,
         )
     except Exception:
         proveedores = []
@@ -804,9 +939,9 @@ def admin_estado_venta(order_id):
     cur = None
     try:
         conn = get_conn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT estado FROM pedidos WHERE id_pedido=%s FOR UPDATE", (order_id,))
-        order = cur.fetchone()
+        cur = _cursor(conn)
+        _execute(cur, "SELECT estado FROM pedidos WHERE id_pedido=%s FOR UPDATE", (order_id,))
+        order = _fetchone(cur)
         if not order:
             flash("No se encontró el pedido.", "error")
             return redirect(url_for("admin_ventas"))
@@ -814,14 +949,14 @@ def admin_estado_venta(order_id):
             flash("Un pedido cancelado no se puede reactivar.", "warning")
             return redirect(url_for("admin_ventas"))
         if state == "cancelado" and order["estado"] != "cancelado":
-            cur.execute(
+            _execute(cur,
                 """UPDATE productos p SET stock=p.stock + lines.cantidad
                    FROM (SELECT id_producto, SUM(cantidad) AS cantidad FROM ventas
                          WHERE id_pedido=%s GROUP BY id_producto) lines
                    WHERE p.id_producto=lines.id_producto""",
                 (order_id,),
             )
-        cur.execute("UPDATE pedidos SET estado=%s WHERE id_pedido=%s", (state, order_id))
+        _execute(cur, "UPDATE pedidos SET estado=%s WHERE id_pedido=%s", (state, order_id))
         conn.commit()
         flash("Estado de la venta actualizado.", "success")
     except Exception:

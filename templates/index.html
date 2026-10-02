@@ -5,7 +5,7 @@
 {% block content %}
 <section class="home-hero">
     <div class="home-hero-copy">
-        <p class="section-kicker">SNEAKER POINT · MAYOREO</p>
+        <p class="section-kicker badge-overline">SNEAKER POINT · MAYOREO</p>
         <h1>Encuentra proveedores para <span>tu negocio.</span></h1>
         <p>Tenis seleccionados para tu tienda. Explora nuevos modelos, compara opciones y encuentra el par que buscan tus clientes.</p>
         <form action="{{ url_for('search_products') }}" method="GET" class="hero-search">
@@ -26,7 +26,7 @@
 </section>
 
 <section class="home-section" id="categorias">
-    <div class="section-heading"><div><h2>Explora categorías por mayoreo</h2><p>Encuentra estilos para cada tipo de cliente.</p></div></div>
+    <div class="section-heading"><div><p class="badge-overline">Explora opciones</p><h2>Encuentra tu próximo bestseller</h2><p>Encuentra estilos para cada tipo de cliente.</p></div></div>
     <div class="category-grid">
         <a class="category-card" href="{{ url_for('index', q='deportivo') }}"><img src="https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=700&q=80" alt="Tenis deportivos" loading="lazy"><span>Deportivos <i class="fas fa-arrow-right"></i></span></a>
         <a class="category-card" href="{{ url_for('index', q='casual') }}"><img src="https://images.unsplash.com/photo-1525966222134-fcfa99b8ae77?auto=format&fit=crop&w=700&q=80" alt="Tenis casuales" loading="lazy"><span>Casual <i class="fas fa-arrow-right"></i></span></a>
@@ -38,10 +38,11 @@
 <section class="home-section" id="productos">
 <div class="catalog-toolbar">
     <div>
+        <p class="badge-overline">Ver catálogo ↗</p>
         <h2 class="catalog-title">Nuevos ingresos de mayoreo</h2>
         <p>{{ productos|length }} modelos disponibles</p>
     </div>
-    <a href="#productos">Ver todos los productos <i class="fas fa-arrow-right"></i></a>
+    <a href="#productos">Explorar catálogo <i class="fas fa-arrow-right" aria-hidden="true"></i></a>
 </div>
 {% if search_query %}<p class="search-info">Resultados para <strong>{{ search_query }}</strong></p>{% endif %}
 

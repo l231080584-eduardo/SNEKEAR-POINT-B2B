@@ -12,9 +12,9 @@ El checkout registra efectivo al recibir o transferencia. No se guardan datos de
 
 ## Base de datos
 
-Ejecuta [schema.sql](schema.sql) sobre PostgreSQL. El script crea las tablas de clientes, productos, proveedores, propuestas, pedidos y ventas si no existen; también agrega columnas necesarias a instalaciones anteriores sin borrar sus filas.
+Selecciona el motor mediante `DB_ENGINE`. Para PostgreSQL ejecuta [schema.sql](schema.sql); para SQL Server crea primero la base y ejecuta [schema_sqlserver.sql](schema_sqlserver.sql). Ambos esquemas crean las tablas de clientes, productos, proveedores, propuestas, pedidos y ventas.
 
-Con `psql` configurado:
+Con PostgreSQL y `psql` configurado:
 
 ```powershell
 psql "$env:DATABASE_URL" -f schema.sql
@@ -25,8 +25,8 @@ Las cuentas antiguas que guardaban SHA-256 se migran al formato seguro de Werkze
 ## Ejecución local
 
 1. Instala dependencias: `pip install -r requirements.txt`.
-2. Copia `.env.example` a `.env` y configura `SECRET_KEY` y la conexión PostgreSQL. En local puedes usar `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` y `DB_PASS`.
-3. Ejecuta `schema.sql` en esa base.
+2. Copia `.env.example` a `.env`, selecciona `DB_ENGINE=sqlserver` o `DB_ENGINE=postgres` y configura `SECRET_KEY` y las credenciales del motor. SQL Server requiere el controlador ODBC indicado por `DB_DRIVER`.
+3. Ejecuta el script de esquema correspondiente en la base seleccionada.
 4. Crea el hash de administración con `python scripts/hash_admin_password.py`; configura la salida como `ADMIN_PASSWORD_HASH` y define `ADMIN_EMAIL`.
 5. Inicia con `python index.py` y abre `http://localhost:5030`.
 
@@ -36,7 +36,7 @@ No subas `.env` a Git. En producción usa una `SECRET_KEY` aleatoria y privada.
 
 1. Sube el proyecto a un repositorio Git, sin `.env`.
 2. Crea un servicio desde el repositorio en Railway y añade PostgreSQL.
-3. Configura `DATABASE_URL`, `DB_SSLMODE=require`, `SECRET_KEY`, `ADMIN_EMAIL` y `ADMIN_PASSWORD_HASH` en variables del servicio.
+3. Configura `DB_ENGINE=postgres`, `DATABASE_URL`, `DB_SSLMODE=require`, `SECRET_KEY`, `ADMIN_EMAIL` y `ADMIN_PASSWORD_HASH` en variables del servicio.
 4. Ejecuta `schema.sql` en la base alojada.
 5. Railway usa [Procfile](Procfile) para iniciar Gunicorn. Genera el dominio público desde la configuración del servicio.
 6. Entra al panel admin, revisa solicitudes de proveedor, habilita las cuentas y publica los modelos que quieres mostrar en el catálogo público.
